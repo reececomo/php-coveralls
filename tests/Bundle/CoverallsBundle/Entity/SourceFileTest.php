@@ -96,7 +96,7 @@ class SourceFileTest extends ProjectTestCase
     {
         $expected = [
             'name' => $this->filename,
-            'source' => trim(file_get_contents($this->path)),
+            // source' => trim(file_get_contents($this->path)),
             'coverage' => array_fill(0, 9, null),
         ];
 
