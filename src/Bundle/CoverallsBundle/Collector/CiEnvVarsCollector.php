@@ -64,8 +64,10 @@ class CiEnvVarsCollector
             ->fillCircleCi()
             ->fillAppVeyor()
             ->fillJenkins()
+            ->fillGithubActions()
             ->fillLocal()
-            ->fillRepoToken();
+            ->fillRepoToken()
+            ->fillParallel();
 
         return $this->env;
     }
@@ -87,14 +89,15 @@ class CiEnvVarsCollector
     /**
      * Fill Travis CI environment variables.
      *
-     * "TRAVIS", "TRAVIS_JOB_ID" must be set.
+     * "TRAVIS", "TRAVIS_BUILD_NUMBER", TRAVIS_JOB_ID" must be set.
      *
      * @return $this
      */
     protected function fillTravisCi()
     {
-        if (isset($this->env['TRAVIS']) && $this->env['TRAVIS'] && isset($this->env['TRAVIS_JOB_ID'])) {
+        if (isset($this->env['TRAVIS']) && $this->env['TRAVIS'] && isset($this->env['TRAVIS_JOB_ID']) && isset($this->env['TRAVIS_BUILD_NUMBER'])) {
             $this->env['CI_JOB_ID'] = $this->env['TRAVIS_JOB_ID'];
+            $this->env['CI_BUILD_NUMBER'] = $this->env['TRAVIS_BUILD_NUMBER'];
 
             if ($this->config->hasServiceName()) {
                 $this->env['CI_NAME'] = $this->config->getServiceName();
@@ -106,36 +109,48 @@ class CiEnvVarsCollector
             $this->readEnv['TRAVIS'] = $this->env['TRAVIS'];
             $this->readEnv['TRAVIS_JOB_ID'] = $this->env['TRAVIS_JOB_ID'];
             $this->readEnv['CI_NAME'] = $this->env['CI_NAME'];
+            $this->readEnv['CI_BUILD_NUMBER'] = $this->env['CI_BUILD_NUMBER'];
         }
 
         return $this;
     }
 
     /**
-     * Fill Buildkite CI.
-     *
-     * "BUILDKITE", "BUILDKITE_BUILD_NUMBER" must be set.
+     * Fill Github Actions environment variables.
      *
      * @return $this
      */
-    protected function fillBuildkite()
+    protected function fillGithubActions()
     {
-        if (isset($this->env['BUILDKITE']) && $this->env['BUILDKITE'] && isset($this->env['BUILDKITE_BUILD_NUMBER'])) {
-            $this->env['CI_NAME'] = 'Buildkite';
-            $this->env['CI_BUILD_NUMBER'] = $this->getEnvSafe('BUILDKITE_BUILD_NUMBER');
-            $this->env['CI_JOB_ID'] = $this->getEnvSafe('BUILDKITE_BUILD_ID');
-            $this->env['CI_BRANCH'] = $this->getEnvSafe('BUILDKITE_BRANCH');
-            $this->env['CI_BUILD_URL'] = $this->getEnvSafe('BUILDKITE_BUILD_URL');
-            $this->env['CI_PULL_REQUEST'] = $this->getEnvSafe('BUILDKITE_PULL_REQUEST');
-
-            // backup
-            $this->readEnv['BUILDKITE'] = $this->getEnvSafe('BUILDKITE');
-            $this->readEnv['BUILDKITE_BUILD_NUMBER'] = $this->getEnvSafe('BUILDKITE_BUILD_NUMBER');
-            $this->readEnv['BUILDKITE_BUILD_ID'] = $this->getEnvSafe('BUILDKITE_BUILD_ID');
-            $this->readEnv['BUILDKITE_BRANCH'] = $this->getEnvSafe('BUILDKITE_BRANCH');
-            $this->readEnv['BUILDKITE_BUILD_URL'] = $this->getEnvSafe('BUILDKITE_BUILD_URL');
-            $this->readEnv['BUILDKITE_PULL_REQUEST'] = $this->getEnvSafe('BUILDKITE_PULL_REQUEST');
+        if (!isset($this->env['GITHUB_ACTIONS'])) {
+            return $this;
         }
+        $this->env['CI_NAME'] = 'github';
+
+        $githubEventName = $this->env['GITHUB_EVENT_NAME'];
+        $githubRef = $this->env['GITHUB_REF'];
+
+        if (strpos($githubRef, 'refs/heads/') !== false) {
+            $githubRef = str_replace('refs/heads/', '', $githubRef);
+        } elseif ($githubEventName === 'pull_request') {
+            $refParts = explode('/', $githubRef);
+            $prNumber = $refParts[2];
+            $this->env['CI_PULL_REQUEST'] = $prNumber;
+            $this->readEnv['CI_PULL_REQUEST'] = $this->env['CI_PULL_REQUEST'];
+        } elseif (strpos($githubRef, 'refs/tags/') !== false) {
+            $githubRef = str_replace('refs/tags/', '', $githubRef);
+        }
+
+        // Same as coverallsapp/github-action
+        // @link https://github.com/coverallsapp/github-action/blob/5984097c6e76d873ef1d8e8e1836b0914d307c3c/src/run.ts#L47
+        $this->env['CI_JOB_ID'] = $this->env['GITHUB_RUN_ID'];
+        $this->env['CI_BRANCH'] = $githubRef;
+
+        $this->readEnv['GITHUB_ACTIONS'] = $this->env['GITHUB_ACTIONS'];
+        $this->readEnv['GITHUB_REF'] = $this->env['GITHUB_REF'];
+        $this->readEnv['CI_NAME'] = $this->env['CI_NAME'];
+        $this->readEnv['CI_JOB_ID'] = $this->env['CI_JOB_ID'];
+        $this->readEnv['CI_BRANCH'] = $this->env['CI_BRANCH'];
 
         return $this;
     }
@@ -185,6 +200,35 @@ class CiEnvVarsCollector
             $this->readEnv['APPVEYOR_REPO_BRANCH'] = $this->env['APPVEYOR_REPO_BRANCH'];
             $this->readEnv['APPVEYOR_PULL_REQUEST_NUMBER'] = $this->env['APPVEYOR_PULL_REQUEST_NUMBER'];
             $this->readEnv['CI_NAME'] = $this->env['CI_NAME'];
+        }
+
+        return $this;
+    }
+
+    /**
+     * Fill Buildkite CI.
+     *
+     * "BUILDKITE", "BUILDKITE_BUILD_NUMBER" must be set.
+     *
+     * @return $this
+     */
+    protected function fillBuildkite()
+    {
+        if (isset($this->env['BUILDKITE']) && $this->env['BUILDKITE'] && isset($this->env['BUILDKITE_BUILD_NUMBER'])) {
+            $this->env['CI_NAME'] = 'Buildkite';
+            $this->env['CI_BUILD_NUMBER'] = $this->getEnvSafe('BUILDKITE_BUILD_NUMBER');
+            $this->env['CI_JOB_ID'] = $this->getEnvSafe('BUILDKITE_BUILD_ID');
+            $this->env['CI_BRANCH'] = $this->getEnvSafe('BUILDKITE_BRANCH');
+            $this->env['CI_BUILD_URL'] = $this->getEnvSafe('BUILDKITE_BUILD_URL');
+            $this->env['CI_PULL_REQUEST'] = $this->getEnvSafe('BUILDKITE_PULL_REQUEST');
+
+            // backup
+            $this->readEnv['BUILDKITE'] = $this->getEnvSafe('BUILDKITE');
+            $this->readEnv['BUILDKITE_BUILD_NUMBER'] = $this->getEnvSafe('BUILDKITE_BUILD_NUMBER');
+            $this->readEnv['BUILDKITE_BUILD_ID'] = $this->getEnvSafe('BUILDKITE_BUILD_ID');
+            $this->readEnv['BUILDKITE_BRANCH'] = $this->getEnvSafe('BUILDKITE_BRANCH');
+            $this->readEnv['BUILDKITE_BUILD_URL'] = $this->getEnvSafe('BUILDKITE_BUILD_URL');
+            $this->readEnv['BUILDKITE_PULL_REQUEST'] = $this->getEnvSafe('BUILDKITE_PULL_REQUEST');
         }
 
         return $this;
@@ -252,6 +296,24 @@ class CiEnvVarsCollector
         // backup
         if (isset($this->env['COVERALLS_REPO_TOKEN'])) {
             $this->readEnv['COVERALLS_REPO_TOKEN'] = $this->env['COVERALLS_REPO_TOKEN'];
+        }
+
+        return $this;
+    }
+
+    /**
+     * Fill parallel for parallel jobs.
+     *
+     * @return $this
+     */
+    protected function fillParallel()
+    {
+        if (isset($this->env['COVERALLS_PARALLEL'])) {
+            $this->readEnv['COVERALLS_PARALLEL'] = $this->env['COVERALLS_PARALLEL'];
+        }
+
+        if (isset($this->env['COVERALLS_FLAG_NAME'])) {
+            $this->readEnv['COVERALLS_FLAG_NAME'] = $this->env['COVERALLS_FLAG_NAME'];
         }
 
         return $this;
